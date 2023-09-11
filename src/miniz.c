@@ -4033,6 +4033,57 @@ mz_bool mz_zip_reader_init_file(mz_zip_archive *pZip, const char *pFilename, mz_
     return mz_zip_reader_init_file_v2(pZip, pFilename, flags, 0, 0);
 }
 
+
+
+mz_bool mz_zip_reader_init_file_v3(mz_zip_archive *pZip, MZ_FILE *pFile, mz_uint flags, mz_uint64 file_start_ofs, mz_uint64 archive_size)
+{
+    mz_uint64 file_size;
+
+    if (!pFile)
+        return mz_zip_set_error(pZip, MZ_ZIP_FILE_OPEN_FAILED);
+
+    file_size = archive_size;
+    if (!file_size)
+    {
+        if (MZ_FSEEK64(pFile, 0, SEEK_END))
+        {
+            MZ_FCLOSE(pFile);
+            return mz_zip_set_error(pZip, MZ_ZIP_FILE_SEEK_FAILED);
+        }
+
+        file_size = MZ_FTELL64(pFile);
+    }
+
+    /* TODO: Better sanity check archive_size and the # of actual remaining bytes */
+
+    if (file_size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
+    {
+        MZ_FCLOSE(pFile);
+        return mz_zip_set_error(pZip, MZ_ZIP_NOT_AN_ARCHIVE);
+    }
+
+    if (!mz_zip_reader_init_internal(pZip, flags))
+    {
+        MZ_FCLOSE(pFile);
+        return MZ_FALSE;
+    }
+
+    pZip->m_zip_type = MZ_ZIP_TYPE_FILE;
+    pZip->m_pRead = mz_zip_file_read_func;
+    pZip->m_pIO_opaque = pZip;
+    pZip->m_pState->m_pFile = pFile;
+    pZip->m_archive_size = file_size;
+    pZip->m_pState->m_file_archive_start_ofs = file_start_ofs;
+
+    if (!mz_zip_reader_read_central_dir(pZip, flags))
+    {
+        mz_zip_reader_end_internal(pZip, MZ_FALSE);
+        return MZ_FALSE;
+    }
+
+    return MZ_TRUE;
+}
+
 mz_bool mz_zip_reader_init_file_v2(mz_zip_archive *pZip, const char *pFilename, mz_uint flags, mz_uint64 file_start_ofs, mz_uint64 archive_size)
 {
     mz_uint64 file_size;

@@ -169,6 +169,7 @@ namespace Weather {
 
 //struct std::tm TimeSteps[HOURS_FORECAST];
 
+
 struct struct_HourlyWeather {
     tm time;
     int hour;
@@ -180,7 +181,15 @@ struct struct_HourlyWeather {
     String forecast;
     int forecast_id;
 };
-extern struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
+
+struct struct_Weather {
+    tm publish_time;
+    struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
+};
+
+extern struct_Weather WF;
+
+// extern struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
 void getWeather();
 void coreTask( void * pvParameters );
 int determineWeatherIcon(const struct_HourlyWeather &hw);

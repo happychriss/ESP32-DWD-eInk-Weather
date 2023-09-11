@@ -1335,6 +1335,7 @@ MINIZ_EXPORT mz_bool mz_zip_writer_init_heap_v2(mz_zip_archive *pZip, size_t siz
 #ifndef MINIZ_NO_STDIO
 MINIZ_EXPORT mz_bool mz_zip_writer_init_file(mz_zip_archive *pZip, const char *pFilename, mz_uint64 size_to_reserve_at_beginning);
 MINIZ_EXPORT mz_bool mz_zip_writer_init_file_v2(mz_zip_archive *pZip, const char *pFilename, mz_uint64 size_to_reserve_at_beginning, mz_uint flags);
+MINIZ_EXPORT mz_bool mz_zip_reader_init_file_v3(mz_zip_archive *pZip, MZ_FILE *pFile, mz_uint flags, mz_uint64 file_start_ofs, mz_uint64 archive_size);
 MINIZ_EXPORT mz_bool mz_zip_writer_init_cfile(mz_zip_archive *pZip, MZ_FILE *pFile, mz_uint flags);
 #endif
 

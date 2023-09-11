@@ -40,15 +40,13 @@ PCF8563_Class rtc;
 #endif
 
 // global variables
-struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
+struct_Weather WF;
 bool b_wait_weather_data = false;
 
-void epd_print_time(int x, int y) {
+void epd_print_time(int x, int y, std::tm *time) {
 
-    std::time_t nowt = std::time(0);   // get time now
-    std::tm *now = std::localtime(&nowt);
     char str_time[20];
-    strftime(str_time, sizeof(str_time), "%H:%M %d.%m.%y", now);
+    strftime(str_time, sizeof(str_time), "%H:%M %d.%m.%y", time);
     int cursor_x = x;
     int cursor_y = y;
 
@@ -90,13 +88,17 @@ void setup() {
     writeln((GFXfont *)&FiraSans, string1, &cursor_x, &cursor_y, NULL);
     epd_poweroff();
 
-    delay(1000);
-    InitSpiff();
+/*    InitSpiff();*/
     InitWifi();
     InitSntp();
 
+
     epd_poweron();
-    epd_print_time(200,250+50);
+
+    std::time_t nowt = std::time(0);   // get time now
+    std::tm *now = std::localtime(&nowt);
+    epd_print_time(200, 250 + 50, now);
+
     epd_poweroff();
 
     DPL("***** Setup done *****");
@@ -107,7 +109,7 @@ void PaintWeather() {
     epd_poweron();
     epd_clear();
 
-#define X_START 100
+#define X_START 10
 
 #define Y_START_TIME 60
 #define Y_START (Y_START_TIME+100)
@@ -118,13 +120,17 @@ void PaintWeather() {
     int y_cursor = Y_START;
     int y_position = 0;
 
-    epd_print_time(X_START,Y_START_TIME);
+    std::time_t nowt = std::time(0);   // get time now
+    std::tm *now = std::localtime(&nowt);
+
+    epd_print_time(X_START, Y_START_TIME, now);
+    epd_print_time(X_START+300, Y_START_TIME, &WF.publish_time);
 
     std::vector<int> forecasts = {0, 3, 6};
 
     for (const auto& value : forecasts) {
         DPL("*********************** Painting forecast *********************");
-        auto fc = HourlyWeather[value];
+        auto fc = WF.HourlyWeather[value];
         printHourlyWeather(fc);
 
         int weather_icon= determineWeatherIcon(fc);

@@ -36,6 +36,9 @@
       <file path="$USER_HOME$/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src" />
       <file path="$USER_HOME$/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src" />
     </libraryRoots>
+    <excludeRoots>
+      <file path="$PROJECT_DIR$/weather_icons" />
+    </excludeRoots>
   </component>
   <component name="ExternalStorageConfigurationManager" enabled="true" />
   <component name="PlatformIOSettings">
