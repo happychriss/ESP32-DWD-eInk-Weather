@@ -41,7 +41,7 @@ PCF8563_Class rtc;
 
 // global variables
 struct_Weather WF;
-bool b_wait_weather_data = false;
+
 
 void epd_print_time(int x, int y, std::tm *time) {
 
@@ -104,7 +104,7 @@ void setup() {
     DPL("***** Setup done *****");
 }
 
-void PaintWeather() {
+void PaintWeather(struct_Weather *ptr_myW) {
 
     epd_poweron();
     epd_clear();
@@ -124,13 +124,13 @@ void PaintWeather() {
     std::tm *now = std::localtime(&nowt);
 
     epd_print_time(X_START, Y_START_TIME, now);
-    epd_print_time(X_START+300, Y_START_TIME, &WF.publish_time);
+    epd_print_time(X_START+300, Y_START_TIME, &ptr_myW->publish_time);
 
     std::vector<int> forecasts = {0, 3, 6};
 
     for (const auto& value : forecasts) {
         DPL("*********************** Painting forecast *********************");
-        auto fc = WF.HourlyWeather[value];
+        auto fc = ptr_myW->HourlyWeather[value];
         printHourlyWeather(fc);
 
         int weather_icon= determineWeatherIcon(fc);
@@ -168,43 +168,13 @@ void PaintWeather() {
 }
 
 // this task is needed to have stack sized increased to 40k, seems to be no other way to do this
-void GetWeatherTask(void *pvParameters) {
-
-    Serial.begin(115200);
-    String taskMessage = "Task running on core ";
-    taskMessage = taskMessage + xPortGetCoreID();
-
-    while (true) {
-
-        DPL("Getting weather data...");
-        getWeather();
-        DPL("Done getting weather data.");
-        b_wait_weather_data = true;
-
-        while (true) {
-            delay(1000);
-        }
-    }
-
-}
 
 void loop() {
     DPL("***** Loop *****");
-    b_wait_weather_data = false;
-    xTaskCreatePinnedToCore(
-            GetWeatherTask,   /* Function to implement the task */
-            "GetWeatherTask", /* Name of the task */
-            40000,      /* Stack size in words */
-            NULL,       /* Task input parameter */
-            0,          /* Priority of the task */
-            NULL,       /* Task handle. */
-            1);  /* Core where the task should run */
+    struct_Weather Weather;
 
-    while (!b_wait_weather_data) {
-        delay(500);
-    }
-
-    PaintWeather();
+    GetWeather(&Weather);
+    PaintWeather(&Weather);
 
 #define DEEP_SLEEP_TIME_SEC (60*60*3)
     uint64_t deep_sleep_time =  DEEP_SLEEP_TIME_SEC;

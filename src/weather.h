@@ -187,10 +187,11 @@ struct struct_Weather {
     struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
 };
 
-extern struct_Weather WF;
+
 
 // extern struct_HourlyWeather HourlyWeather[HOURS_FORECAST];
-void getWeather();
+void GetWeather(struct_Weather *ptr_my_Weather);
+void DWD_Weather(struct_Weather*  ptr_myWF);
 void coreTask( void * pvParameters );
 int determineWeatherIcon(const struct_HourlyWeather &hw);
 void determineWeatherString(const struct_HourlyWeather &weather, String &line_1, String &line_2);

@@ -18,8 +18,11 @@
 
 #define DEST_FS_USES_SPIFFS
 
+
 #include <ESP32-targz.h>
 #include "support.h"
+
+bool b_wait_weather_data = true;
 
 void printHourlyWeather(struct_HourlyWeather hw)  {
     Serial_printTime(&hw.time);
@@ -42,9 +45,12 @@ String getWeatherString(int number) {
 }
 
 
-
 //  pio run -t downloadfs
+// this functions downloads zip file from DWD and zips the file to memory
+
 void *downloadKML(const String fetch_url, size_t *buffer_len) {
+
+
 
 //    Serial.printf("Fetching URL: %s\n", url.c_str());
     DPL("Creating HTTP client...");
@@ -72,14 +78,19 @@ void *downloadKML(const String fetch_url, size_t *buffer_len) {
 
     DPF("Content-Length: %d\n", len);
 
-    // Allocate buffer dynamically
-    char *buffer = (char *)calloc(file_len + 1,sizeof(char));  // +1 for null-terminator
+    // Allocate buffer dynamically and use free pointer (tip from chatpgt)
+    auto freeMemory = [](void* ptr) { free(ptr); };
+
+    std::unique_ptr<char, decltype(freeMemory)> buffer(static_cast<char*>(calloc(file_len + 1, sizeof(char))), freeMemory);
+
     if (buffer == nullptr) {
         DPL("Failed to allocate memory for the file.");
         return nullptr;
     }
 
-    FILE *file=fmemopen(buffer, file_len, "w");
+    char* ptr_buffer = buffer.get();
+    FILE *file=fmemopen(ptr_buffer, file_len, "w");
+
 
     //     FILE *file = fopen(MOSMIX_ZIP_FILE, FILE_WRITE);
 
@@ -117,6 +128,9 @@ void *downloadKML(const String fetch_url, size_t *buffer_len) {
 
     http.end();
     DPL("Done saving the file");
+
+#undef print_file
+#ifdef print_file
     DPL("Printing first 10 bytes of the file: ");
 
     for(int i = 0; i < 50; i++) {
@@ -134,7 +148,8 @@ void *downloadKML(const String fetch_url, size_t *buffer_len) {
         Serial.println(c);
     }
     DPL("Done printing file.");
-    FILE *file2=fmemopen(buffer, file_len, "r");
+#endif
+    FILE *file2=fmemopen(ptr_buffer, file_len, "r");
     // Unzipping using miniz
     mz_zip_archive zip_archive;
     memset(&zip_archive, 0, sizeof(zip_archive));
@@ -203,7 +218,10 @@ void *downloadKML(const String fetch_url, size_t *buffer_len) {
 
 // DWD data has index of hours from last forecast time - identify index of hours to use for accessing forecast data
 // also
-std::pair<int, int> get_hour_index_for_time(std::tm *forecast_time, pugi::xml_node dt_root) {
+std::pair<int, int>
+get_hour_index_for_time(struct_Weather *ptr_weather,
+                        std::tm *forecast_time,
+                        pugi::xml_node dt_root) {
 
     int hours_index = 0;
     int hours_index_result = 0;
@@ -239,8 +257,8 @@ std::pair<int, int> get_hour_index_for_time(std::tm *forecast_time, pugi::xml_no
 
         }
         if (b_found) {
-            WF.HourlyWeather[update_index].time = TimeStep;
-            WF.HourlyWeather[update_index].hour = hours_index;
+            ptr_weather->HourlyWeather[update_index].time = TimeStep;
+            ptr_weather->HourlyWeather[update_index].hour = hours_index;
             update_index++;
         }
 
@@ -317,20 +335,6 @@ getForcast(pugi::xml_node dforecast_root, int hours_index, const std::string &se
 }
 
 
-const uint8_t *findIconByAlternativeIndex(uint16_t altIndex) {
-    for (auto weather_icon: weather_icons) { // Assuming the array size is 20
-        auto alternative_index = (uint16_t) pgm_read_word(&(weather_icon[1]));
-        DPF("findIconByAlternativeIndex: alternative_index=%d\n", alternative_index);
-
-        if (alternative_index == altIndex) {
-            DPF("findIconByAlternativeIndex: found icon for alternative index %d\n", altIndex);
-            auto res = (const uint8_t *) pgm_read_ptr(&(weather_icon[0]));
-            DPL("findIconByAlternativeIndex-3");
-            return res;
-        }
-    }
-    return nullptr; // Not found
-}
 
 
 void determineWeatherString(const struct_HourlyWeather &weather, String &line_1, String &line_2) {
@@ -368,9 +372,6 @@ int determineWeatherIcon(const struct_HourlyWeather &hw) {
 //        std::string forecast;
 //        int forecast_id;
 //    };
-
-
-
 
     int fc_icon = NO_ICON_FOUND;
 
@@ -429,7 +430,9 @@ int determineWeatherIcon(const struct_HourlyWeather &hw) {
 }
 
 
-void getWeather() {
+void DWD_Weather(struct_Weather*  ptr_myWF) {
+
+    struct_Weather &myWF = *ptr_myWF;
 
     DPL("Downloading KML file...");
     String localFilePath;
@@ -465,7 +468,7 @@ void getWeather() {
             w_time >> std::get_time(&IssueTime, "%Y-%m-%dT%H:%M:%S"); // or just %T in this case
             DP("IssueTime: ");
             Serial_printTime(&IssueTime);
-            WF.publish_time = IssueTime;
+            myWF.publish_time = IssueTime;
 
             // Extract hours into hours_index
 
@@ -485,7 +488,7 @@ void getWeather() {
             DPL("<-Current time");
 
             int hours_index, hours_offset;
-            std::tie(hours_index, hours_offset) = get_hour_index_for_time(now, dt_root);
+            std::tie(hours_index, hours_offset) = get_hour_index_for_time(ptr_myWF, now, dt_root);
             DPF("Hours Index: %d\n", hours_index);
 
             // Extract weather data - jump to the right hour in
@@ -504,29 +507,31 @@ void getWeather() {
 
 
             for (int i = 0; i < forecast_value.size(); ++i) {
-
                 // DPF( "Hour %d: %s\n", i, getWeatherString((int) forecast_value[i]).c_str());
-
-                WF.HourlyWeather[i].forecast = getWeatherString((int) forecast_value[i]);
-                WF.HourlyWeather[i].forecast_id = (int) forecast_value[i];
+                myWF.HourlyWeather[i].forecast = getWeatherString((int) forecast_value[i]);
+                myWF.HourlyWeather[i].forecast_id = (int) forecast_value[i];
 
             }
+
+
 
             // ************** Get Temperature ************** by using the forecast value for TTT
             forecast_value = getForcast(dforecast_root, hours_index, "TTT");
 
             for (int i = 0; i < forecast_value.size(); ++i) {
                 // DPF( "Hour %d: %f C\n", i, forecast_value[i] - 273.15);
-                WF.HourlyWeather[i].temperature = forecast_value[i] - 273.15;
+                myWF.HourlyWeather[i].temperature = forecast_value[i] - 273.15;
             }
+
 
             // ************** Get Rain **************10 kg/m² Niederschlag entsprechen ungefähr 10 mm Niederschlag
 
             forecast_value = getForcast(dforecast_root, hours_index, "RR1c");
             for (int i = 0; i < forecast_value.size(); ++i) {
                 // DPF( "Hour %d: %f mm\n", i, forecast_value[i]);
-                WF.HourlyWeather[i].rain = forecast_value[i];
+                myWF.HourlyWeather[i].rain = forecast_value[i];
             }
+
 
             // ************** Get Wind **************
 
@@ -535,42 +540,85 @@ void getWeather() {
             for (int i = 0; i < forecast_value.size(); ++i) {
                 auto wind_beaufort = static_cast<double >(std::round(forecast_value[i] * forecast_value[i] / 3.01));
                 // DPF( "Hour %d: %f Bft\n", i, wind_beaufort);
-                WF.HourlyWeather[i].wind = wind_beaufort;
+                myWF.HourlyWeather[i].wind = wind_beaufort;
             }
+
 
             // ************** Get Sun **************
 
             forecast_value = getForcast(dforecast_root, hours_index, "SunD1");
 
             for (int i = 0; i < forecast_value.size(); ++i) {
-                WF.HourlyWeather[i].sun = static_cast<double >(std::round(forecast_value[i] / 60));
+                myWF.HourlyWeather[i].sun = static_cast<double >(std::round(forecast_value[i] / 60));
             }
+
 
             // ************** Get Cloud **************
 
             forecast_value = getForcast(dforecast_root, hours_index, "Neff");
 
             for (int i = 0; i < forecast_value.size(); ++i) {
-                WF.HourlyWeather[i].clouds = forecast_value[i];
+                myWF.HourlyWeather[i].clouds = forecast_value[i];
             }
 
-            for (auto &hw: WF.HourlyWeather) {
+
+            for (auto &hw: myWF.HourlyWeather) {
                 printHourlyWeather(hw);
             }
 
+            DPL("Done parsing weather data.");
 
         } else {
             DPL("ERROR: Failed to load and parse the KML file:");
             DPL(result.description());
         }
 
-        std::cout << "Done!\n";
+        DPL("Done");
 
     } else {
-        std::cout << "Failed to load and parse the KML file." << std::endl;
+        DPL("Failed to load and parse the KML file.");
     }
+
+    free(p);
+
 }
 
-void paint_weather() {
 
+// Task to get weather data
+
+void DWD_WeatherTask(void *pvParameters) {
+
+    auto *ptr_my_Weather = (struct_Weather*)pvParameters;
+
+    Serial.begin(115200);
+
+    DPL("Getting weather data by running Task...");
+    DWD_Weather(ptr_my_Weather);
+    DPL("Done getting weather data.");
+    b_wait_weather_data = true;
+    delay(1000);
+    vTaskDelete(NULL);
+
+}
+
+void GetWeather(struct_Weather *ptr_my_Weather) {
+    DPL("Getting weather data by starting task...");
+
+    b_wait_weather_data = false;
+
+    xTaskCreatePinnedToCore(
+            DWD_WeatherTask,   /* Function to implement the task */
+            "DWD_WeatherTask", /* Name of the task */
+            40000,      /* Stack size in words */
+            (void*)ptr_my_Weather,       /* Task input parameter */
+            0,          /* Priority of the task */
+            NULL,       /* Task handle. */
+            1);  /* Core where the task should run */
+
+    while (!b_wait_weather_data) {
+        delay(500);
+    }
+
+    DPL("Done getting weather data.");
+    b_wait_weather_data = true;
 }
